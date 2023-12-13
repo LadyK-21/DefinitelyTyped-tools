@@ -1,12 +1,4 @@
-import "./types/fstream";
-import {
-  readFile as readFileWithEncoding,
-  readFileSync as readFileWithEncodingSync,
-  stat,
-  writeFile as writeFileWithEncoding,
-  writeJson as writeJsonRaw,
-  createWriteStream,
-} from "fs-extra";
+import fs from "fs";
 import { Pack } from "tar";
 import tarStream from "tar-stream";
 import https, { Agent, request } from "https";
@@ -19,10 +11,9 @@ import { parseJson, withoutStart, sleep, tryParseJson, isObject } from "./miscel
 import { FS, Dir, InMemoryFS } from "./fs";
 import { assertDefined } from "./assertions";
 import { LoggerWithErrors } from "./logging";
-import { Stats } from "fs";
 
 export async function readFile(path: string): Promise<string> {
-  const res = await readFileWithEncoding(path, { encoding: "utf8" });
+  const res = await fs.promises.readFile(path, { encoding: "utf8" });
   if (res.includes("�")) {
     throw new Error(`Bad character in ${path}`);
   }
@@ -30,7 +21,7 @@ export async function readFile(path: string): Promise<string> {
 }
 
 export function readFileSync(path: string): string {
-  const res = readFileWithEncodingSync(path, { encoding: "utf8" });
+  const res = fs.readFileSync(path, { encoding: "utf8" });
   if (res.includes("�")) {
     throw new Error(`Bad character in ${path}`);
   }
@@ -66,11 +57,11 @@ export async function tryReadJson<T>(path: string, predicate?: (parsed: unknown)
 }
 
 export function writeFile(path: string, content: string): Promise<void> {
-  return writeFileWithEncoding(path, content, { encoding: "utf8" });
+  return fs.promises.writeFile(path, content, { encoding: "utf8" });
 }
 
 export function writeJson(path: string, content: unknown, formatted = true): Promise<void> {
-  return writeJsonRaw(path, content, { spaces: formatted ? 4 : 0 });
+  return fs.promises.writeFile(path, JSON.stringify(content, undefined, formatted ? 4 : undefined));
 }
 
 export function streamOfString(text: string): NodeJS.ReadableStream {
@@ -164,7 +155,7 @@ function doRequest(options: FetchOptions, makeRequest: typeof request, agent?: A
         res.on("end", () => {
           resolve(text);
         });
-      }
+      },
     );
     if (options.body !== undefined) {
       req.write(options.body);
@@ -174,11 +165,9 @@ function doRequest(options: FetchOptions, makeRequest: typeof request, agent?: A
 }
 
 export async function isDirectory(path: string): Promise<boolean> {
-  return (await stat(path)).isDirectory();
+  return (await fs.promises.stat(path)).isDirectory();
 }
 
-export const npmInstallFlags =
-  "--ignore-scripts --no-shrinkwrap --no-package-lock --no-bin-links --no-save --no-audit --no-fund";
 const downloadTimeout = 1_000_000; // ms
 const connectionTimeout = 800_000; // ms
 
@@ -205,7 +194,7 @@ export function downloadAndExtractFile(url: string, log: LoggerWithErrors): Prom
       .get(url, { timeout: connectionTimeout }, (response) => {
         if (response.statusCode !== 200) {
           return rejectAndClearTimeout(
-            new Error(`DefinitelyTyped download failed with status code ${response.statusCode}`)
+            new Error(`DefinitelyTyped download failed with status code ${response.statusCode}`),
           );
         }
 
@@ -237,7 +226,7 @@ export function downloadAndExtractFile(url: string, log: LoggerWithErrors): Prom
         extract.on("finish", () => {
           log.info("Done receiving " + url);
           clearTimeout(timeout);
-          resolve(new InMemoryFS(root.finish(), ""));
+          resolve(new InMemoryFS(root.finish(), "/"));
         });
 
         response.pipe(zlib.createGunzip()).pipe(extract);
@@ -258,7 +247,7 @@ export function unGzip(input: NodeJS.ReadableStream): NodeJS.ReadableStream {
 
 export function writeTgz(inputDirectory: string, outFileName: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    resolve(streamDone(createTgz(inputDirectory, reject).pipe(createWriteStream(outFileName))));
+    resolve(streamDone(createTgz(inputDirectory, reject).pipe(fs.createWriteStream(outFileName))));
   });
 }
 
@@ -276,15 +265,15 @@ function createTar(dir: string, onError: (error: Error) => void): NodeJS.Readabl
   packer.on("error", onError);
   const stream = packer.add(entryToAdd);
   packer.end();
-
-  return stream;
+  // Shady, but minipass is compatible enough with ReadableStream for this use.
+  return stream as unknown as NodeJS.ReadableStream;
 }
 
 /**
  * Work around a bug where directories bundled on Windows do not have executable permission when extracted on Linux.
  * https://github.com/npm/node-tar/issues/7#issuecomment-17572926
  */
-function addDirectoryExecutablePermission(_: string, stat: Stats): boolean {
+function addDirectoryExecutablePermission(_: string, stat: fs.Stats): boolean {
   if (stat.isDirectory()) {
     stat.mode = addExecutePermissionsFromReadPermissions(stat.mode);
   }

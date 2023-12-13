@@ -1,6 +1,6 @@
 {
   "name": "@definitelytyped/typescript-versions",
-  "version": "0.0.115",
+  "version": "0.0.182",
   "description": "List of supported TypeScript versions",
   "author": "Andrew Branch <andrew@wheream.io>",
   "homepage": "https://github.com/microsoft/DefinitelyTyped-tools/tree/master/packages/typescript-versions#readme",
@@ -16,5 +16,8 @@
   },
   "bugs": {
     "url": "https://github.com/microsoft/DefinitelyTyped-tools/issues"
+  },
+  "engines": {
+    "node": ">=16.17.0"
   }
 }
